@@ -1,5 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { STEP_CONFIG } from "../agent/config";
+import { withRetry } from "./anthropic-retry";
 import type { UsageTracker } from "./usage-tracker";
 
 export async function call(
@@ -27,7 +28,7 @@ export async function call(
   if (opts.temperature !== undefined) {
     params.temperature = opts.temperature;
   }
-  const res = await client.messages.create(params);
+  const res = await withRetry(() => client.messages.create(params), "llm.call");
   opts.tracker?.record(opts.model, {
     inputTokens: res.usage.input_tokens,
     outputTokens: res.usage.output_tokens,
@@ -43,13 +44,17 @@ export async function callWithThinking(
   opts: { system: string; prompt: string; tracker?: UsageTracker | undefined },
 ): Promise<string> {
   const cfg = STEP_CONFIG.adr;
-  const res = await client.messages.create({
-    model: cfg.model,
-    max_tokens: cfg.maxTokens,
-    thinking: { type: "enabled", budget_tokens: cfg.thinking.budgetTokens },
-    system: opts.system,
-    messages: [{ role: "user", content: opts.prompt }],
-  });
+  const res = await withRetry(
+    () =>
+      client.messages.create({
+        model: cfg.model,
+        max_tokens: cfg.maxTokens,
+        thinking: { type: "enabled", budget_tokens: cfg.thinking.budgetTokens },
+        system: opts.system,
+        messages: [{ role: "user", content: opts.prompt }],
+      }),
+    "llm.callWithThinking",
+  );
   opts.tracker?.record(cfg.model, {
     inputTokens: res.usage.input_tokens,
     outputTokens: res.usage.output_tokens,

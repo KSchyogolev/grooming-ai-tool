@@ -215,6 +215,18 @@ Every stage is designed to be safely re-runnable:
 ### Graceful Degradation
 All analysis tools degrade gracefully — API errors result in empty data sections rather than pipeline failures.
 
+## Rate Limit Handling
+
+All external API calls are wrapped with retry logic:
+
+| API | Retry Strategy | Delays |
+|-----|---------------|--------|
+| **GitHub REST** | 3 retries on 429 / 5xx | 1s → 2s → 4s |
+| **Anthropic Claude** | 4 retries on 429 (rate\_limit) | 15s → 30s → 45s → 60s |
+| **Anthropic Claude** | 4 retries on 5xx (server error) | 2s → 5s → 10s → 20s |
+
+Anthropic retry also respects the `retry-after` header when present.
+
 ## Project Structure
 
 ```
@@ -236,6 +248,7 @@ grooming-tool/
 │   │   ├── github.ts            # GitHub REST API wrapper (retry, caching)
 │   │   └── linear.ts            # Linear SDK + GraphQL wrapper
 │   ├── lib/
+│   │   ├── anthropic-retry.ts   # Retry wrapper for Anthropic 429 / 5xx errors
 │   │   ├── code-analysis.ts     # Import extraction + complexity heuristics
 │   │   ├── context-formatter.ts # Context string builders for LLM prompts
 │   │   ├── linear-comment.ts    # Linear comment markdown builder
@@ -254,6 +267,7 @@ grooming-tool/
 │       ├── linear.ts            # Vercel serverless — Linear webhook endpoint
 │       └── github.ts            # Vercel serverless — GitHub PR merge endpoint
 ├── tests/
+│   ├── anthropic-retry.test.ts
 │   ├── code-analysis.test.ts
 │   ├── config.test.ts
 │   ├── context-formatter.test.ts
@@ -288,6 +302,7 @@ Tests cover:
 - **LLM wrappers** — call and callWithThinking behavior
 - **Context formatter** — context string assembly
 - **Linear comment** — markdown comment generation
+- **Anthropic retry** — rate limit (429) and server error (5xx) retry with backoff, `retry-after` header support
 
 ## Tech Stack
 

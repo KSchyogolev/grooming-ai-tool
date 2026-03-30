@@ -8,6 +8,7 @@ import {
   readFile,
   searchCode,
 } from "../connectors/github";
+import { withRetry } from "../lib/anthropic-retry";
 import type { UsageTracker } from "../lib/usage-tracker";
 import * as log from "../logger";
 import type {
@@ -181,13 +182,17 @@ Start gathering context. You have the file tree in the system prompt — use it 
       iteration: i,
     });
 
-    const response = await client.messages.create({
-      model: STEP_CONFIG.orchestrator.model,
-      max_tokens: STEP_CONFIG.orchestrator.maxTokens,
-      system: buildSystemPrompt(repoTree),
-      tools: TOOLS,
-      messages,
-    });
+    const response = await withRetry(
+      () =>
+        client.messages.create({
+          model: STEP_CONFIG.orchestrator.model,
+          max_tokens: STEP_CONFIG.orchestrator.maxTokens,
+          system: buildSystemPrompt(repoTree),
+          tools: TOOLS,
+          messages,
+        }),
+      `orchestrator:${issue.identifier}:iter${i}`,
+    );
     tracker?.record(STEP_CONFIG.orchestrator.model, {
       inputTokens: response.usage.input_tokens,
       outputTokens: response.usage.output_tokens,
