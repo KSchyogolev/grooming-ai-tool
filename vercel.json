@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/webhook/linear.ts": {
-      "maxDuration": 300
+      "maxDuration": 600
     },
     "api/webhook/github.ts": {
       "maxDuration": 60
