@@ -31,6 +31,7 @@
 8. AST вместо heuristic complexity. Текущая реализация - regex + indent depth покрывает подавляющее большинство кейсов, но можно улучшить.
 9. Очереди и идемпотентность по ним. Сейчас, если одной и той же таске менять статус (при условии что груминг еще не готов) - она будет перезапускаться повторно. Можно было бы сделать костыль через дополнительного сообщения в задачу, но испортило бы UX. В рамках MVP решено было оставить такое поведение.
 10. *Возможно* RAG/embeddings вместо agentic search - дешевле за lookup, но требует vector DB, индексацию и maintenance. Текущая реализация даёт лучшее качество контекста, так что нужен доресеч.
+11. Рефакторинг - DI + SRP.
 
 ### Продуктовые
 
@@ -104,14 +105,18 @@ Linear Issue ──► Webhook (Vercel) ──► DOR Gate ──► Orchestrato
    │
    ├─ 4d. Planner
    │       ├─ Декомпозиция (Haiku 4.5) → подзадачи, размеры, оценки часов
-   │       ├─ ADR (Opus 4.5 + extended thinking) → архитектурный план
+   │       ├─ Rollup размера эпика (сумма story points подзадач → S/M/L/XL/XXL)
+   │       ├─ ADR (Opus 4.5 + extended thinking) → формат зависит от размера:
+   │       │     S: Decision + Files to change (2-3 предложения)
+   │       │     M: Context + Decision + Risks table
+   │       │     L/XL: полный ADR по Michael Nygard (Context → Decision Drivers →
+   │       │           Considered Options → Decision → Consequences + Mermaid)
    │       └─ Сборка: комментарий Linear, описание PR, путь ADR-файла
    │
    └─ 4e. Writer
           ├─ Комментарий в Linear с [AI-GROOMING] маркером
           ├─ PR в GitHub (ветка ai-grooming/{identifier}, файл ADR)
           ├─ Запрос ревьюеров (до 3 из ownership map)
-          ├─ Второй комментарий в Linear со ссылкой на PR
           └─ Перевод задачи в "Need Grooming Review"
 ```
 
@@ -159,9 +164,9 @@ LLM в этом сценарии не вызывается — только Line
 ### Цепочка статусов в Linear
 
 ```
-Ready for Grooming ──► [AI обработка] ──► Need Grooming Review ──► [Мерж PR] ──► Ready for Dev
-         │                                                                   
-         └─► DOR fail ──► (ожидание) ──► DOR recheck ──► [AI обработка] ──►──┘
+Ready for Grooming ───► [AI обработка] ────────────────► Need Grooming Review ──► [Мерж PR] ──► Ready for Dev
+         │                                                                │   
+         └─► DOR fail ─► (ожидание) ─► DOR recheck ─► [AI обработка] ──►──┘
 ```
 
 ### Защитные механизмы
@@ -176,12 +181,3 @@ Ready for Grooming ──► [AI обработка] ──► Need Grooming Rev
 | **Tool error isolation** | Ошибка в инструменте оркестратора не роняет цикл, а возвращает `{ error }` в LLM |
 | **JSON repair** | Обрезанный JSON от LLM автоматически дочинивается (`repairTruncatedJson`) |
 | **Fail-safe DOR** | Если JSON от Haiku не распарсился — задача отклоняется (безопасный дефолт) |
-
-### Модели и их роли в пайплайне
-
-| Шаг | Модель | Задача | max_tokens |
-|-----|--------|--------|------------|
-| DOR Gate | `claude-haiku-4-5` | Проверка готовности задачи | 1 024 |
-| Orchestrator | `claude-sonnet-4` | Сбор контекста из кодовой базы (tool-use) | 4 096 |
-| Decomposition | `claude-haiku-4-5` | Разбивка на подзадачи | 4 096 |
-| ADR | `claude-opus-4-5` | Архитектурный план (extended thinking, budget 10k) | 16 000 |

@@ -162,7 +162,7 @@ describe("rollupSize", () => {
   });
 
   test("two XL = XXL (16+16=32)", () => {
-    expect(rollupSize([task("XL"), task("XL")])).toContain("XXL");
+    expect(rollupSize([task("XL"), task("XL")])).toBe("XXL");
   });
 
   test("empty array = S (0 points)", () => {
@@ -221,7 +221,7 @@ describe("buildPrDescription", () => {
     ],
     hotspots: ["src/api/handler.ts"],
     recentCommits: [{ sha: "abc1234", message: "fix: api timeout", author: "Alice" }],
-    architecturePlan: "## Decision\nUse Redis.",
+    architecturePlan: "## Architecture\n\nUse Redis.",
     decomposition: [
       {
         title: "Set up Redis client",

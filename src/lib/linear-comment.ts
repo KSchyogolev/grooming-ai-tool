@@ -1,8 +1,8 @@
-import type { RunStats, SubTask } from "../skills/types";
+import type { EpicSize, RunStats, SubTask } from "../skills/types";
 
 export function buildLinearComment(
   decomposition: SubTask[],
-  epicSize: string,
+  epicSize: EpicSize,
   estimateHours: number,
   questions: string[],
   adrFilename: string,
@@ -22,9 +22,11 @@ export function buildLinearComment(
       ? questions.map((q) => `- [ ] ${q}`).join("\n")
       : `> No blocking questions. See \`[NEEDS INVESTIGATION]\` markers in \`${adrFilename}\` if any.`;
 
+  const sizeLabel = epicSize === "XXL" ? "XXL — consider splitting the epic" : epicSize;
+
   return `## AI Grooming Draft — [${issueIdentifier}](${issueUrl})   [AI-GROOMING]
 
-> **Complexity:** ${epicSize} · **Estimate:** ~${estimateHours}h · AI-generated — review before grooming meeting.
+> **Complexity:** ${sizeLabel} · **Estimate:** ~${estimateHours}h · AI-generated — review before grooming meeting.
 
 ### Subtasks
 
@@ -32,7 +34,7 @@ export function buildLinearComment(
 |---|------|------|----------|------|
 ${table}
 
-**Total:** ~${epicSize} (~${estimateHours}h)
+**Total:** ~${sizeLabel} (~${estimateHours}h)
 
 ### Open Questions
 

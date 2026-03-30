@@ -1,6 +1,12 @@
 import type { UsageSummary } from "../lib/usage-tracker";
 import type { CodeAnalysis } from "../types";
 
+export const SUBTASK_SIZES = ["XS", "S", "M", "L", "XL"] as const;
+export type SubTaskSize = (typeof SUBTASK_SIZES)[number];
+
+export const EPIC_SIZES = ["S", "M", "L", "XL", "XXL"] as const;
+export type EpicSize = (typeof EPIC_SIZES)[number];
+
 export type TaskComplexity = "S" | "M" | "L" | "XL";
 
 export interface RunStats {
@@ -31,7 +37,7 @@ export interface SubTask {
   userStory: string;
   acceptanceCriteria: string[];
   technicalDetails: string;
-  size: "XS" | "S" | "M" | "L" | "XL";
+  size: SubTaskSize;
   dependsOn: string[];
   estimateHours?: number;
 }

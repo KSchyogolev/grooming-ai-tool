@@ -34,14 +34,14 @@ mock.module("../src/connectors/github", () => ({
   analyzeFile: mockAnalyzeFile,
   getOwnershipMap: mockGetOwnershipMap,
   getRepoTree: mockGetRepoTree,
+  getDefaultRepo: () => "test/repo",
   clearFileCache: mock(() => {}),
+  initGithub: mock(() => {}),
   requestReviewers: mock(() => Promise.resolve()),
   createPR: mock(() =>
     Promise.resolve({ prUrl: "https://github.com/test/pr/1", prNumber: 1, authorLogin: "bot" }),
   ),
 }));
-
-process.env.GITHUB_REPO = "test/repo";
 
 const orchestratorModule: {
   runOrchestrator: typeof import("../src/agent/orchestrator").runOrchestrator;

@@ -7,7 +7,7 @@ import {
   getIssueMarkers,
   updateIssueState,
 } from "./connectors/linear";
-import { processIssue } from "./index";
+import { initConnectors, processIssue } from "./index";
 import * as log from "./logger";
 import type { GithubPRWebhookPayload, LinearIssue, LinearWebhookPayload } from "./types";
 
@@ -75,6 +75,7 @@ export async function handleLinearWebhook(
   signature: string | null,
 ): Promise<WebhookResult> {
   const config = loadConfig();
+  initConnectors(config);
 
   if (config.linearWebhookSecret) {
     if (!signature || !verifyLinearSignature(rawBody, signature, config.linearWebhookSecret)) {
@@ -204,6 +205,7 @@ export async function handleGithubWebhook(
   signature: string | null,
 ): Promise<WebhookResult> {
   const config = loadConfig();
+  initConnectors(config);
 
   if (config.githubWebhookSecret) {
     if (!signature || !verifyGithubSignature(rawBody, signature, config.githubWebhookSecret)) {

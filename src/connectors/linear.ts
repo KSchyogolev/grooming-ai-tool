@@ -1,18 +1,34 @@
 import { LinearClient } from "@linear/sdk";
 import type { LinearIssue } from "../types";
 
+export interface LinearConnectorConfig {
+  apiKey: string;
+  teamKey: string;
+  groomingState: string;
+}
+
+let _linearConfig: LinearConnectorConfig | null = null;
 let _client: LinearClient | null = null;
 
+export function initLinear(config: LinearConnectorConfig): void {
+  _linearConfig = config;
+  _client = new LinearClient({ apiKey: config.apiKey });
+}
+
+function getLinearConfig(): LinearConnectorConfig {
+  if (!_linearConfig) throw new Error("Linear connector not initialized — call initLinear() first");
+  return _linearConfig;
+}
+
 function client(): LinearClient {
-  if (!_client) {
-    _client = new LinearClient({ apiKey: process.env.LINEAR_API_KEY as string });
-  }
+  if (!_client) throw new Error("Linear connector not initialized — call initLinear() first");
   return _client;
 }
 
 export async function getIssuesReadyForGrooming(): Promise<LinearIssue[]> {
-  const teamId = getLinearTeamKey();
-  const stateName = process.env.LINEAR_GROOMING_STATE ?? "Ready for Grooming";
+  const cfg = getLinearConfig();
+  const teamId = cfg.teamKey;
+  const stateName = cfg.groomingState;
   const since = new Date(Date.now() - 30 * 60 * 1000).toISOString();
 
   const issues = await client().issues({
@@ -75,23 +91,11 @@ export async function getIssueMarkers(issueId: string): Promise<IssueMarkers> {
   return { hasGrooming, dorStatus: hasInteraction ? "interacted" : "pending" };
 }
 
-function getLinearApiKey(): string {
-  const key = process.env.LINEAR_API_KEY;
-  if (!key) throw new Error("LINEAR_API_KEY is not set");
-  return key;
-}
-
-function getLinearTeamKey(): string {
-  const key = process.env.LINEAR_TEAM_KEY;
-  if (!key) throw new Error("LINEAR_TEAM_KEY is not set");
-  return key;
-}
-
 async function linearGraphQL<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
   const res = await fetch("https://api.linear.app/graphql", {
     method: "POST",
     headers: {
-      Authorization: getLinearApiKey(),
+      Authorization: getLinearConfig().apiKey,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ query, variables }),

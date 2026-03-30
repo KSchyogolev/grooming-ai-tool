@@ -7,13 +7,29 @@ export interface LogEntry {
   [key: string]: unknown;
 }
 
-function emit(entry: LogEntry): void {
-  const line = JSON.stringify({ ts: new Date().toISOString(), ...entry });
-  if (entry.level === "error") {
+export type LogWriter = (line: string, level: "info" | "warn" | "error") => void;
+
+const defaultWriter: LogWriter = (line, level) => {
+  if (level === "error") {
     console.error(line);
   } else {
     console.log(line);
   }
+};
+
+let _writer: LogWriter = defaultWriter;
+
+export function setWriter(w: LogWriter): void {
+  _writer = w;
+}
+
+export function resetWriter(): void {
+  _writer = defaultWriter;
+}
+
+function emit(entry: LogEntry): void {
+  const line = JSON.stringify({ ts: new Date().toISOString(), ...entry });
+  _writer(line, entry.level);
 }
 
 export function info(msg: string, extra?: Omit<LogEntry, "level" | "msg">): void {

@@ -1,5 +1,5 @@
 import * as log from "../../logger";
-import type { SubTask } from "../types";
+import { type EpicSize, SUBTASK_SIZES, type SubTask, type SubTaskSize } from "../types";
 
 export interface DecompositionResult {
   subtasks: SubTask[];
@@ -49,9 +49,8 @@ function validateSubTask(raw: unknown): SubTask {
   if (!userStory.toLowerCase().startsWith("as a")) {
     log.warn("SubTask userStory doesn't follow 'As a...' format", { title: t.title as string });
   }
-  const validSizes = ["XS", "S", "M", "L", "XL"] as const;
   const size = t.size as string;
-  if (!validSizes.includes(size as (typeof validSizes)[number])) {
+  if (!SUBTASK_SIZES.includes(size as SubTaskSize)) {
     throw new Error(`Invalid size "${size}" for "${t.title}"`);
   }
   const base: SubTask = {
@@ -84,14 +83,14 @@ function repairTruncatedJson(raw: string): string {
   // Close any unmatched brackets/braces
   const opens: string[] = [];
   let inString = false;
-  let escape = false;
+  let isEscaped = false;
   for (const ch of text) {
-    if (escape) {
-      escape = false;
+    if (isEscaped) {
+      isEscaped = false;
       continue;
     }
     if (ch === "\\") {
-      escape = true;
+      isEscaped = true;
       continue;
     }
     if (ch === '"') {
@@ -111,12 +110,13 @@ function repairTruncatedJson(raw: string): string {
   return text;
 }
 
-export function rollupSize(subtasks: SubTask[]): string {
-  const pts: Record<SubTask["size"], number> = { XS: 1, S: 2, M: 4, L: 8, XL: 16 };
-  const total = subtasks.reduce((sum, t) => sum + pts[t.size], 0);
+const SIZE_POINTS: Record<SubTaskSize, number> = { XS: 1, S: 2, M: 4, L: 8, XL: 16 };
+
+export function rollupSize(subtasks: SubTask[]): EpicSize {
+  const total = subtasks.reduce((sum, t) => sum + SIZE_POINTS[t.size], 0);
   if (total <= 3) return "S";
   if (total <= 6) return "M";
   if (total <= 12) return "L";
   if (total <= 24) return "XL";
-  return "XXL — consider splitting the epic";
+  return "XXL";
 }

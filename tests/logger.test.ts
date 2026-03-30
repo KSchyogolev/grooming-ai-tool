@@ -1,22 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { error, info, timed, warn } from "../src/logger";
+import { error, info, resetWriter, setWriter, timed, warn } from "../src/logger";
 
 describe("logger", () => {
   let captured: string[];
-  let origLog: typeof console.log;
-  let origError: typeof console.error;
 
   beforeEach(() => {
     captured = [];
-    origLog = console.log;
-    origError = console.error;
-    console.log = (...args: unknown[]) => captured.push(String(args[0]));
-    console.error = (...args: unknown[]) => captured.push(String(args[0]));
+    setWriter((line) => captured.push(line));
   });
 
   afterEach(() => {
-    console.log = origLog;
-    console.error = origError;
+    resetWriter();
   });
 
   test("info outputs JSON with level and msg", () => {
@@ -30,6 +24,7 @@ describe("logger", () => {
 
   test("warn outputs with warn level", () => {
     warn("warning", { issueId: "ENG-1" });
+    expect(captured).toHaveLength(1);
     const parsed = JSON.parse(captured[0] as string);
     expect(parsed.level).toBe("warn");
     expect(parsed.issueId).toBe("ENG-1");
@@ -37,6 +32,7 @@ describe("logger", () => {
 
   test("error outputs with error level", () => {
     error("failed", { step: "test" });
+    expect(captured).toHaveLength(1);
     const parsed = JSON.parse(captured[0] as string);
     expect(parsed.level).toBe("error");
     expect(parsed.step).toBe("test");
@@ -48,6 +44,7 @@ describe("logger", () => {
       return 42;
     }, "operation done");
     expect(result).toBe(42);
+    expect(captured).toHaveLength(1);
     const parsed = JSON.parse(captured[0] as string);
     expect(parsed.durationMs).toBeGreaterThanOrEqual(40);
     expect(parsed.msg).toBe("operation done");
@@ -58,10 +55,11 @@ describe("logger", () => {
       await timed(async () => {
         throw new Error("boom");
       }, "operation");
-      expect(true).toBe(false); // Should not reach
+      expect(true).toBe(false);
     } catch (err) {
       expect((err as Error).message).toBe("boom");
     }
+    expect(captured).toHaveLength(1);
     const parsed = JSON.parse(captured[0] as string);
     expect(parsed.level).toBe("error");
     expect(parsed.msg).toContain("failed");

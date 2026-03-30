@@ -1,31 +1,19 @@
 import type { ComplexityReport } from "../types";
 
+const IMPORT_PATTERN =
+  /(?:from\s+["']([^"']+)["']|import\(["']([^"']+)["']\)|require\(["']([^"']+)["']\)|export\s+(?:\*|\{[^}]*\})\s+from\s+["']([^"']+)["'])/g;
+
 /** Extract import paths from TypeScript/JavaScript source */
 export function extractImports(content: string, contextPath: string): string[] {
-  const imports: string[] = [];
   const dir = contextPath.split("/").slice(0, -1).join("/");
+  const seen = new Set<string>();
 
-  for (const match of content.matchAll(/from\s+["']([^"']+)["']/g)) {
-    const imp = match[1];
-    if (imp) imports.push(resolveImportPath(imp, dir));
+  for (const match of content.matchAll(IMPORT_PATTERN)) {
+    const imp = match[1] ?? match[2] ?? match[3] ?? match[4];
+    if (imp) seen.add(resolveImportPath(imp, dir));
   }
 
-  for (const match of content.matchAll(/import\(["']([^"']+)["']\)/g)) {
-    const imp = match[1];
-    if (imp) imports.push(resolveImportPath(imp, dir));
-  }
-
-  for (const match of content.matchAll(/require\(["']([^"']+)["']\)/g)) {
-    const imp = match[1];
-    if (imp) imports.push(resolveImportPath(imp, dir));
-  }
-
-  for (const match of content.matchAll(/export\s+(?:\*|\{[^}]*\})\s+from\s+["']([^"']+)["']/g)) {
-    const imp = match[1];
-    if (imp) imports.push(resolveImportPath(imp, dir));
-  }
-
-  return [...new Set(imports)];
+  return [...seen];
 }
 
 function resolveImportPath(imp: string, dir: string): string {

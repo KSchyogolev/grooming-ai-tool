@@ -11,20 +11,21 @@ import {
   parseDecomposition,
   rollupSize,
 } from "../skills/task-decomposition";
-import type { SkillContext, TaskComplexity } from "../skills/types";
+import type { EpicSize, SkillContext, SubTaskSize, TaskComplexity } from "../skills/types";
 import type { GatheredContext, GroomingPlan } from "../types";
 import { STEP_CONFIG } from "./config";
 
-function deriveTaskComplexity(epicSize: string): TaskComplexity {
+function deriveTaskComplexity(epicSize: EpicSize): TaskComplexity {
   if (epicSize === "S") return "S";
   if (epicSize === "M") return "M";
   if (epicSize === "L") return "L";
   return "XL";
 }
 
-function sumEstimateHours(subtasks: { estimateHours?: number; size: string }[]): number {
-  const sizeToHours: Record<string, number> = { XS: 1, S: 3, M: 6, L: 12, XL: 20 };
-  return subtasks.reduce((sum, t) => sum + (t.estimateHours ?? sizeToHours[t.size] ?? 4), 0);
+const SIZE_TO_HOURS: Record<SubTaskSize, number> = { XS: 1, S: 3, M: 6, L: 12, XL: 20 };
+
+function sumEstimateHours(subtasks: { estimateHours?: number; size: SubTaskSize }[]): number {
+  return subtasks.reduce((sum, t) => sum + (t.estimateHours ?? SIZE_TO_HOURS[t.size]), 0);
 }
 
 export async function runPlanner(

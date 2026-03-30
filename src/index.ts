@@ -5,16 +5,26 @@ import { runPlanner } from "./agent/planner";
 import { runWriter } from "./agent/writer";
 import { loadConfig, validateConnectivity } from "./config";
 import type { Config } from "./config";
-import { clearFileCache } from "./connectors/github";
+import { clearFileCache, initGithub } from "./connectors/github";
 import {
   getIssueMarkers,
   getIssuesReadyForGrooming,
+  initLinear,
   postComment,
   updateIssueState,
 } from "./connectors/linear";
 import { UsageTracker } from "./lib/usage-tracker";
 import * as log from "./logger";
 import type { GroomingTrigger, LinearIssue } from "./types";
+
+export function initConnectors(config: Config): void {
+  initGithub({ token: config.githubToken, repo: config.githubRepo });
+  initLinear({
+    apiKey: config.linearApiKey,
+    teamKey: config.linearTeamId,
+    groomingState: config.linearGroomingState,
+  });
+}
 
 export async function processIssue(
   client: Anthropic,
@@ -106,9 +116,6 @@ export async function processIssue(
     step: "writer",
   });
 
-  const prLinkComment = `> **PR:** [#${result.prNumber}](${result.prUrl})`;
-  await postComment(issue.id, prLinkComment);
-
   await updateIssueState(issue.id, config.linearNeedReviewState);
   log.info("Done — moved to review", {
     issueId: id,
@@ -120,6 +127,7 @@ export async function processIssue(
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  initConnectors(config);
 
   if (!config.dryRun) {
     await validateConnectivity(config);

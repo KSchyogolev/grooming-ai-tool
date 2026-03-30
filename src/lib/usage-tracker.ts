@@ -1,3 +1,5 @@
+import { MODEL_HAIKU, MODEL_OPUS, MODEL_SONNET } from "../agent/config";
+
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
@@ -11,20 +13,22 @@ export interface UsageSummary {
   llmCalls: number;
 }
 
-const PRICING_PER_MTOK: Record<string, { input: number; output: number }> = {
-  "claude-opus-4-5-20251101": { input: 15, output: 75 },
-  "claude-sonnet-4-20250514": { input: 3, output: 15 },
-  "claude-haiku-4-5-20251001": { input: 1, output: 5 },
-};
+const PRICING_PER_MTOK: ReadonlyMap<string, { input: number; output: number }> = new Map([
+  [MODEL_OPUS, { input: 15, output: 75 }],
+  [MODEL_SONNET, { input: 3, output: 15 }],
+  [MODEL_HAIKU, { input: 1, output: 5 }],
+]);
+
+const DEFAULT_PRICING = { input: 3, output: 15 };
 
 function getModelPricing(model: string): { input: number; output: number } {
-  const exact = PRICING_PER_MTOK[model];
+  const exact = PRICING_PER_MTOK.get(model);
   if (exact) return exact;
-  for (const [key, pricing] of Object.entries(PRICING_PER_MTOK)) {
+  for (const [key, pricing] of PRICING_PER_MTOK) {
     const prefix = key.split("-2")[0] ?? key;
     if (model.startsWith(prefix)) return pricing;
   }
-  return { input: 3, output: 15 };
+  return DEFAULT_PRICING;
 }
 
 export class UsageTracker {

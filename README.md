@@ -24,7 +24,7 @@ The pipeline has five stages:
 2. **Orchestrator** — Claude Sonnet autonomously searches code, reads files, analyzes dependencies, and gathers context through a tool-use loop (up to 12 iterations).
 3. **Planner** — generates task decomposition (Haiku) and an architectural decision record (Opus with extended thinking).
 4. **Writer** — publishes a structured comment to Linear and creates a PR with the ADR document in GitHub.
-5. **State transition** — posts a PR link comment to the issue and moves it to "Need Grooming Review" status in Linear.
+5. **State transition** — moves the issue to "Need Grooming Review" status in Linear.
 
 ## Agent Architecture
 

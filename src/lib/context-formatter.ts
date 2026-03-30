@@ -1,41 +1,82 @@
-import type { GatheredContext } from "../types";
+import type { ComplexityReport, GatheredContext, ModuleDependency, OwnershipEntry } from "../types";
+
+interface FormatStyle {
+  depLine: (d: ModuleDependency) => string;
+  ownerLine: (o: OwnershipEntry) => string;
+  complexityLine: (c: ComplexityReport) => string;
+}
+
+const adrStyle: FormatStyle = {
+  depLine: (d) => {
+    const imports = d.imports.length > 0 ? d.imports.join(", ") : "none";
+    const importedBy = d.importedBy.length > 0 ? d.importedBy.join(", ") : "none";
+    return `  - ${d.filePath}: imports [${imports}], imported by [${importedBy}]`;
+  },
+  ownerLine: (o) => {
+    const authors = o.topAuthors
+      .slice(0, 3)
+      .map((a) => `${a.name} (${a.percentage}%, ${a.commits} commits)`)
+      .join(", ");
+    return `  - ${o.filePath}: ${authors || "unknown"} — ${o.totalCommits} total commits`;
+  },
+  complexityLine: (c) => {
+    const longFns =
+      c.longFunctions.length > 0 ? `, long functions: ${c.longFunctions.join(", ")}` : "";
+    return `  - ${c.filePath}: ${c.complexity} complexity, ${c.lines} lines, ${c.functions} functions, max indent ${c.maxIndentDepth}${longFns}`;
+  },
+};
+
+const contextStyle: FormatStyle = {
+  depLine: (d) => {
+    const imports = d.imports.length > 0 ? `imports: ${d.imports.join(", ")}` : "no imports";
+    const importedBy =
+      d.importedBy.length > 0 ? `imported by: ${d.importedBy.join(", ")}` : "no dependents";
+    return `  ${d.filePath}: ${imports} | ${importedBy}`;
+  },
+  ownerLine: (o) => {
+    const authors = o.topAuthors
+      .slice(0, 3)
+      .map((a) => `${a.name} (${a.percentage}%)`)
+      .join(", ");
+    return `  ${o.filePath}: ${authors || "unknown"} (${o.totalCommits} commits)`;
+  },
+  complexityLine: (c) => {
+    const longFns = c.longFunctions.length > 0 ? `, long: ${c.longFunctions.join(", ")}` : "";
+    return `  ${c.filePath}: ${c.complexity} complexity, ${c.lines} lines, ${c.functions} functions, max indent ${c.maxIndentDepth}${longFns}`;
+  },
+};
+
+function formatCodeAnalysisSections(
+  codeAnalysis: GatheredContext["codeAnalysis"],
+  style: FormatStyle,
+  headers: { deps: string; ownership: string; complexity: string },
+): string[] {
+  const { dependencies, ownership, complexity } = codeAnalysis;
+  const sections: string[] = [];
+
+  if (dependencies.length > 0) {
+    sections.push(`${headers.deps}\n${dependencies.map(style.depLine).join("\n")}`);
+  }
+  if (ownership.length > 0) {
+    sections.push(`${headers.ownership}\n${ownership.map(style.ownerLine).join("\n")}`);
+  }
+  if (complexity.length > 0) {
+    sections.push(`${headers.complexity}\n${complexity.map(style.complexityLine).join("\n")}`);
+  }
+
+  return sections;
+}
 
 /**
  * Builds a structured block with code analysis data (deps, ownership, complexity)
  * specifically for the ADR prompt so the LLM can reference it in Code Analysis Summary.
  */
 export function buildCodeAnalysisContext(context: GatheredContext): string {
-  const { dependencies, ownership, complexity } = context.codeAnalysis;
-  const sections: string[] = [];
-
-  if (dependencies.length > 0) {
-    const lines = dependencies.map((d) => {
-      const imports = d.imports.length > 0 ? d.imports.join(", ") : "none";
-      const importedBy = d.importedBy.length > 0 ? d.importedBy.join(", ") : "none";
-      return `  - ${d.filePath}: imports [${imports}], imported by [${importedBy}]`;
-    });
-    sections.push(`MODULE DEPENDENCIES (blast radius):\n${lines.join("\n")}`);
-  }
-
-  if (ownership.length > 0) {
-    const lines = ownership.map((o) => {
-      const authors = o.topAuthors
-        .slice(0, 3)
-        .map((a) => `${a.name} (${a.percentage}%, ${a.commits} commits)`)
-        .join(", ");
-      return `  - ${o.filePath}: ${authors || "unknown"} — ${o.totalCommits} total commits`;
-    });
-    sections.push(`CODE OWNERSHIP:\n${lines.join("\n")}`);
-  }
-
-  if (complexity.length > 0) {
-    const lines = complexity.map((c) => {
-      const longFns =
-        c.longFunctions.length > 0 ? `, long functions: ${c.longFunctions.join(", ")}` : "";
-      return `  - ${c.filePath}: ${c.complexity} complexity, ${c.lines} lines, ${c.functions} functions, max indent ${c.maxIndentDepth}${longFns}`;
-    });
-    sections.push(`COMPLEXITY ANALYSIS:\n${lines.join("\n")}`);
-  }
+  const sections = formatCodeAnalysisSections(context.codeAnalysis, adrStyle, {
+    deps: "MODULE DEPENDENCIES (blast radius):",
+    ownership: "CODE OWNERSHIP:",
+    complexity: "COMPLEXITY ANALYSIS:",
+  });
 
   if (sections.length === 0) {
     return "CODE ANALYSIS DATA: No analysis data collected. The Code Analysis Summary in your output should note this as [NEEDS INVESTIGATION].";
@@ -73,35 +114,12 @@ export function buildContextString(context: GatheredContext): string {
     parts.push(`High-churn files (30d): ${context.diff.hotspots.join(", ")}`);
   }
 
-  const { dependencies, ownership, complexity } = context.codeAnalysis;
-  if (dependencies.length > 0) {
-    const depLines = dependencies.map((d) => {
-      const imports = d.imports.length > 0 ? `imports: ${d.imports.join(", ")}` : "no imports";
-      const importedBy =
-        d.importedBy.length > 0 ? `imported by: ${d.importedBy.join(", ")}` : "no dependents";
-      return `  ${d.filePath}: ${imports} | ${importedBy}`;
-    });
-    parts.push(`[MODULE DEPENDENCIES — blast radius]\n${depLines.join("\n")}`);
-  }
-
-  if (ownership.length > 0) {
-    const ownerLines = ownership.map((o) => {
-      const authors = o.topAuthors
-        .slice(0, 3)
-        .map((a) => `${a.name} (${a.percentage}%)`)
-        .join(", ");
-      return `  ${o.filePath}: ${authors || "unknown"} (${o.totalCommits} commits)`;
-    });
-    parts.push(`[CODE OWNERSHIP — reviewers/experts]\n${ownerLines.join("\n")}`);
-  }
-
-  if (complexity.length > 0) {
-    const complexLines = complexity.map(
-      (c) =>
-        `  ${c.filePath}: ${c.complexity} complexity, ${c.lines} lines, ${c.functions} functions, max indent ${c.maxIndentDepth}${c.longFunctions.length > 0 ? `, long: ${c.longFunctions.join(", ")}` : ""}`,
-    );
-    parts.push(`[COMPLEXITY ANALYSIS]\n${complexLines.join("\n")}`);
-  }
+  const analysisSections = formatCodeAnalysisSections(context.codeAnalysis, contextStyle, {
+    deps: "[MODULE DEPENDENCIES — blast radius]",
+    ownership: "[CODE OWNERSHIP — reviewers/experts]",
+    complexity: "[COMPLEXITY ANALYSIS]",
+  });
+  parts.push(...analysisSections);
 
   return parts.join("\n\n---\n\n");
 }

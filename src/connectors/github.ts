@@ -8,17 +8,29 @@ import type {
   OwnershipEntry,
 } from "../types";
 
-function getRepo(): string {
-  const repo = process.env.GITHUB_REPO;
-  if (!repo) throw new Error("GITHUB_REPO is not set");
-  return repo;
+export interface GithubConnectorConfig {
+  token: string;
+  repo: string;
+}
+
+let _ghConfig: GithubConnectorConfig | null = null;
+
+export function initGithub(config: GithubConnectorConfig): void {
+  _ghConfig = config;
+}
+
+function getConfig(): GithubConnectorConfig {
+  if (!_ghConfig) throw new Error("GitHub connector not initialized — call initGithub() first");
+  return _ghConfig;
+}
+
+export function getDefaultRepo(): string {
+  return getConfig().repo;
 }
 
 function getHeaders(): Record<string, string> {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) throw new Error("GITHUB_TOKEN is not set");
   return {
-    Authorization: `Bearer ${token}`,
+    Authorization: `Bearer ${getConfig().token}`,
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };
@@ -79,7 +91,7 @@ async function fetchFileContent(filePath: string, repo: string, ref: string): Pr
  * Fetch the full file tree of the repo (recursive).
  * Filters out noise (node_modules, dist, .git) and returns a compact path list.
  */
-export async function getRepoTree(repo = getRepo(), ref = "main"): Promise<string[]> {
+export async function getRepoTree(repo = getDefaultRepo(), ref = "main"): Promise<string[]> {
   const refData = await ghFetch<{ object: { sha: string } }>(
     `https://api.github.com/repos/${repo}/git/ref/heads/${ref}`,
   );
@@ -114,7 +126,7 @@ export async function getRepoTree(repo = getRepo(), ref = "main"): Promise<strin
 
 export async function searchCode(
   query: string,
-  repo = getRepo(),
+  repo = getDefaultRepo(),
   fileExtensions?: string[],
   maxResults = 10,
 ): Promise<GithubSearchResult[]> {
@@ -134,7 +146,7 @@ export async function searchCode(
 
 export async function readFile(
   filePath: string,
-  repo = getRepo(),
+  repo = getDefaultRepo(),
   ref = "main",
 ): Promise<GithubFileContent> {
   const content = await fetchFileContent(filePath, repo, ref);
@@ -142,7 +154,7 @@ export async function readFile(
 }
 
 export async function getDiff(
-  repo = getRepo(),
+  repo = getDefaultRepo(),
   pathFilter?: string,
   sinceDays = 30,
 ): Promise<GithubDiff> {
@@ -191,7 +203,7 @@ export async function getDiff(
  */
 export async function analyzeFile(
   filePath: string,
-  repo = getRepo(),
+  repo = getDefaultRepo(),
   ref = "main",
 ): Promise<FileAnalysis> {
   const content = await fetchFileContent(filePath, repo, ref);
@@ -233,7 +245,7 @@ export async function analyzeFile(
  */
 export async function getOwnershipMap(
   paths: string[],
-  repo = getRepo(),
+  repo = getDefaultRepo(),
   sinceDays = 180,
 ): Promise<OwnershipEntry[]> {
   const since = new Date(Date.now() - sinceDays * 86400 * 1000).toISOString();
@@ -285,7 +297,7 @@ export async function getOwnershipMap(
 export async function requestReviewers(
   prNumber: number,
   reviewers: string[],
-  repo = getRepo(),
+  repo = getDefaultRepo(),
 ): Promise<void> {
   if (reviewers.length === 0) return;
 
@@ -308,7 +320,7 @@ export async function createPR(
   fullDocument: string,
   prDescription: string,
   adrFilename: string,
-  repo = getRepo(),
+  repo = getDefaultRepo(),
 ): Promise<{ prUrl: string; prNumber: number; authorLogin: string }> {
   const branch = `ai-grooming/${identifier.toLowerCase()}`;
 

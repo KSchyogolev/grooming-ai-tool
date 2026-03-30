@@ -1,13 +1,10 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { APIError, RateLimitError } from "@anthropic-ai/sdk";
-import { withRetry, type RetryConfig } from "../src/lib/anthropic-retry";
+import { type RetryConfig, withRetry } from "../src/lib/anthropic-retry";
+import { resetWriter, setWriter } from "../src/logger";
 
-mock.module("../src/logger", () => ({
-  info: mock(() => {}),
-  warn: mock(() => {}),
-  error: mock(() => {}),
-  timed: mock((fn: () => Promise<unknown>) => fn()),
-}));
+beforeAll(() => setWriter(() => {}));
+afterAll(() => resetWriter());
 
 const FAST: RetryConfig = {
   maxRetries: 4,
@@ -135,9 +132,7 @@ describe("withRetry", () => {
     const err = makeRateLimitError();
     const fn = mock(() => Promise.reject(err));
 
-    await expect(
-      withRetry(fn, "test", { ...FAST, maxRetries: 1 }),
-    ).rejects.toThrow("rate limited");
+    await expect(withRetry(fn, "test", { ...FAST, maxRetries: 1 })).rejects.toThrow("rate limited");
     expect(fn).toHaveBeenCalledTimes(2);
   });
 });

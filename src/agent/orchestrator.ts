@@ -2,6 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
 import {
   analyzeFile,
+  getDefaultRepo,
   getDiff,
   getOwnershipMap,
   getRepoTree,
@@ -25,12 +26,6 @@ import { TOOLS } from "./tools";
 
 type ToolResult = { name: string; data: unknown };
 
-function getRepo(): string {
-  const repo = process.env.GITHUB_REPO;
-  if (!repo) throw new Error("GITHUB_REPO is not set");
-  return repo;
-}
-
 function validateToolInput(name: string, input: Record<string, unknown>): void {
   switch (name) {
     case "github_search_code":
@@ -52,9 +47,12 @@ function validateToolInput(name: string, input: Record<string, unknown>): void {
   }
 }
 
-async function executeTool(name: string, input: Record<string, unknown>): Promise<ToolResult> {
+async function executeTool(
+  name: string,
+  input: Record<string, unknown>,
+  repo: string,
+): Promise<ToolResult> {
   validateToolInput(name, input);
-  const repo = getRepo();
 
   switch (name) {
     case "github_search_code": {
@@ -145,7 +143,7 @@ export async function runOrchestrator(
     codeAnalysis: { dependencies: [], ownership: [], complexity: [] },
   };
 
-  const repo = getRepo();
+  const repo = getDefaultRepo();
   const tree = await log.timed(() => getRepoTree(repo), "Repo tree fetched", {
     issueId: issue.identifier,
     step: "orchestrator:tree",
@@ -158,6 +156,8 @@ export async function runOrchestrator(
     fileCount: tree.length,
     chars: repoTree.length,
   });
+
+  const systemPrompt = buildSystemPrompt(repoTree);
 
   const messages: MessageParam[] = [
     {
@@ -187,7 +187,7 @@ Start gathering context. You have the file tree in the system prompt — use it 
         client.messages.create({
           model: STEP_CONFIG.orchestrator.model,
           max_tokens: STEP_CONFIG.orchestrator.maxTokens,
-          system: buildSystemPrompt(repoTree),
+          system: systemPrompt,
           tools: TOOLS,
           messages,
         }),
@@ -231,7 +231,7 @@ Start gathering context. You have the file tree in the system prompt — use it 
 
           let content: string;
           try {
-            const toolResult = await executeTool(block.name, input);
+            const toolResult = await executeTool(block.name, input, repo);
             collectResult(collected, toolResult);
             const serialized = JSON.stringify(toolResult.data);
             content =

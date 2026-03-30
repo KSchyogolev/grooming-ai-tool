@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { handleLinearWebhook } from "../../src/webhook";
 
 export const config = {
-  maxDuration: 300,
+  maxDuration: 600,
   api: { bodyParser: false },
 };
 
