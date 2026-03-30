@@ -51,3 +51,137 @@
 #### Расширение пайплайна
 11. Подключение трекеров вроде Granola для сбора дополнительного контекста из встреч и запуска тригеров
 12. Web UI с админкой — дашборд обработанных задач, статистика cost/quality, ручной re-groom
+
+
+---
+
+## User Flow и сценарии
+
+### Общая схема
+
+```
+Linear Issue ──► Webhook (Vercel) ──► DOR Gate ──► Orchestrator ──► Planner ──► Writer ──► Linear + GitHub
+```
+
+### Деплой и точки входа
+
+Приложение деплоится на **Vercel** как две serverless-функции:
+
+| Endpoint | Файл | maxDuration | Назначение |
+|----------|-------|-------------|------------|
+| `POST /api/webhook/linear` | `api/webhook/linear.ts` | 600 сек | Основной хук — запускает весь AI-grooming пайплайн |
+| `POST /api/webhook/github` | `api/webhook/github.ts` | 60 сек | Обработка мержа PR — перевод задачи в следующий статус |
+
+Обе функции — тонкие обёртки: парсят сырое тело запроса и передают в `src/webhook.ts`, где происходит верификация подписи и маршрутизация.
+
+### Сценарий 1: Happy Path (полный грумминг)
+
+**Триггер:** задача в Linear переводится в статус «Ready for Grooming».
+
+```
+1. Linear ──webhook──► Vercel (linear endpoint)
+2. Верификация HMAC-SHA256 подписи
+3. Проверка: событие = Issue update + сменился stateId + новый статус = "Ready for Grooming"
+4. processIssue(issue, "state_change")
+   │
+   ├─ 4a. getIssueMarkers() — проверка идемпотентности
+   │       (нет ли уже [AI-GROOMING] комментария, каков dorStatus)
+   │
+   ├─ 4b. DOR Gate (Haiku 4.5)
+   │       - Описание < 80 символов → автоматический fail без LLM
+   │       - Иначе → LLM оценивает готовность → JSON { passed, missing }
+   │       - ✅ passed → продолжаем
+   │
+   ├─ 4c. Orchestrator (Sonnet 4)
+   │       - System prompt с деревом репозитория
+   │       - Tool-use цикл (до 12 итераций):
+   │         • github_search_code — поиск по коду
+   │         • github_read_file — чтение файлов
+   │         • github_get_diff — история изменений + hotspots
+   │         • github_analyze_file — импорты, зависимости, сложность
+   │         • github_ownership_map — авторы по файлам
+   │       - Результат: собранный контекст о кодовой базе
+   │
+   ├─ 4d. Planner
+   │       ├─ Декомпозиция (Haiku 4.5) → подзадачи, размеры, оценки часов
+   │       ├─ ADR (Opus 4.5 + extended thinking) → архитектурный план
+   │       └─ Сборка: комментарий Linear, описание PR, путь ADR-файла
+   │
+   └─ 4e. Writer
+          ├─ Комментарий в Linear с [AI-GROOMING] маркером
+          ├─ PR в GitHub (ветка ai-grooming/{identifier}, файл ADR)
+          ├─ Запрос ревьюеров (до 3 из ownership map)
+          ├─ Второй комментарий в Linear со ссылкой на PR
+          └─ Перевод задачи в "Need Grooming Review"
+```
+
+### Сценарий 2: DOR не пройден → исправление → повторный прогон
+
+**Триггер:** задача не проходит DOR-проверку.
+
+```
+1. processIssue → DOR Gate → ❌ fail
+2. Бот публикует комментарий [AI-DOR-CHECK] с перечнем проблем
+3. Пайплайн останавливается, dorStatus = "pending"
+   │
+   │  ⏳ Пользователь обновляет описание задачи
+   │
+4. Пользователь сигнализирует готовность одним из способов:
+   ├─ Ответ в треде на DOR-комментарий → Linear webhook → событие Comment create
+   └─ Реакция (эмодзи) на DOR-комментарий → Linear webhook → событие Reaction create
+   │
+5. handleDorRecheck():
+   ├─ getIssueMarkers() → dorStatus = "interacted" (есть дети в треде или реакции)
+   ├─ Проверка: задача всё ещё в "Ready for Grooming"
+   └─ processIssue(issue, "dor_recheck") → полный пайплайн с шага 4b
+```
+
+**Как определяется dorStatus:**
+- `"none"` — нет комментария с `[AI-DOR-CHECK]`
+- `"pending"` — DOR-комментарий есть, но нет ни ответов в треде, ни реакций
+- `"interacted"` — на последнем DOR-комментарии есть дочерние комментарии или реакции
+
+### Сценарий 3: Мерж PR → автоперевод статуса
+
+**Триггер:** PR с заголовком `[AI Grooming] TEAM-123` мержится в GitHub.
+
+```
+1. GitHub ──webhook──► Vercel (github endpoint)
+2. Верификация HMAC-SHA256 подписи
+3. Проверка: action = "closed" + merged = true
+4. Парсинг идентификатора из заголовка PR: /\[AI Grooming\]\s+(\w+-\d+)/
+5. getIssueByIdentifier("TEAM-123")
+6. updateIssueState → "Ready for Dev"
+```
+
+LLM в этом сценарии не вызывается — только Linear API.
+
+### Цепочка статусов в Linear
+
+```
+Ready for Grooming ──► [AI обработка] ──► Need Grooming Review ──► [Мерж PR] ──► Ready for Dev
+         │                                                                   
+         └─► DOR fail ──► (ожидание) ──► DOR recheck ──► [AI обработка] ──►──┘
+```
+
+### Защитные механизмы
+
+| Механизм | Описание |
+|----------|----------|
+| **Идемпотентность** | Если у задачи уже есть `[AI-GROOMING]` комментарий — повторный прогон не запускается |
+| **Антипетля** | Комментарии с маркерами `[AI-DOR-CHECK]` и `[AI-GROOMING]` игнорируются как триггеры |
+| **DOR pending guard** | Если DOR провален и пользователь ещё не отреагировал — повторный прогон блокируется |
+| **Retry Anthropic** | До 4 попыток при rate limit / 5xx, с учётом `retry-after` заголовка |
+| **Retry GitHub** | До 3 попыток при 429/5xx с задержками 1s → 2s → 4s |
+| **Tool error isolation** | Ошибка в инструменте оркестратора не роняет цикл, а возвращает `{ error }` в LLM |
+| **JSON repair** | Обрезанный JSON от LLM автоматически дочинивается (`repairTruncatedJson`) |
+| **Fail-safe DOR** | Если JSON от Haiku не распарсился — задача отклоняется (безопасный дефолт) |
+
+### Модели и их роли в пайплайне
+
+| Шаг | Модель | Задача | max_tokens |
+|-----|--------|--------|------------|
+| DOR Gate | `claude-haiku-4-5` | Проверка готовности задачи | 1 024 |
+| Orchestrator | `claude-sonnet-4` | Сбор контекста из кодовой базы (tool-use) | 4 096 |
+| Decomposition | `claude-haiku-4-5` | Разбивка на подзадачи | 4 096 |
+| ADR | `claude-opus-4-5` | Архитектурный план (extended thinking, budget 10k) | 16 000 |
