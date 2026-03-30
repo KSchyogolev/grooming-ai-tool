@@ -1,0 +1,184 @@
+import type { SkillContext, SubTask } from "../types";
+
+export function buildPrDescription(ctx: SkillContext): string {
+  return `## What & Why
+
+**Issue:** [${ctx.issueIdentifier}](${ctx.issueUrl}) — ${ctx.issueTitle}
+**Complexity:** ${ctx.taskComplexity} · **Estimate:** ~${ctx.estimateHours}h
+
+${ctx.issueDescription}
+
+---
+
+## Decomposition
+
+${buildSubtasksTable(ctx.decomposition, ctx.estimateHours)}
+
+---
+
+${ctx.architecturePlan}
+
+---
+
+## Open Questions
+
+${buildQuestions(ctx.questions)}
+
+---
+
+## Code Context
+
+${buildCodeContext(ctx)}
+
+---
+
+${buildFooter(ctx)}`;
+}
+
+function buildSubtasksTable(subtasks: SubTask[], totalHours: number): string {
+  if (subtasks.length === 0) return "_No subtasks identified._";
+
+  const rows = subtasks
+    .map((t, i) => {
+      const hours = t.estimateHours ? `${t.estimateHours}h` : "—";
+      return `| ${i + 1} | ${t.title} | \`${t.size}\` | ${hours} | ${t.dependsOn.join(", ") || "—"} |`;
+    })
+    .join("\n");
+
+  const details = subtasks.map((t, i) => buildSubtaskDetail(t, i + 1)).join("\n\n");
+
+  return `| # | Subtask | Size | Estimate | Depends On |
+|---|---------|------|----------|------------|
+${rows}
+
+**Total estimate:** ~${totalHours}h
+
+### Subtask Details
+
+${details}`;
+}
+
+function buildSubtaskDetail(t: SubTask, num: number): string {
+  const ac = t.acceptanceCriteria.map((c) => `- [ ] ${c}`).join("\n");
+  const deps = t.dependsOn.length > 0 ? `\n**Depends on:** ${t.dependsOn.join(", ")}` : "";
+  return `<details>
+<summary><b>${num}. ${t.title}</b> &nbsp;·&nbsp; <code>${t.size}</code></summary>
+
+**User Story**
+> ${t.userStory}
+
+**Acceptance Criteria**
+${ac}
+
+**Technical Details**
+${t.technicalDetails}${deps}
+
+</details>`;
+}
+
+function buildQuestions(questions: string[]): string {
+  if (questions.length === 0) return "_No blocking questions identified._";
+  return questions.map((q) => `- [ ] ${q}`).join("\n");
+}
+
+function buildCodeContext(ctx: SkillContext): string {
+  const { dependencies, ownership, complexity } = ctx.codeAnalysis;
+  const parts: string[] = [];
+
+  if (ctx.analyzedFiles.length > 0) {
+    const fileList = ctx.analyzedFiles.map((f) => `- \`${f}\``).join("\n");
+    parts.push(`**Files analyzed:**\n${fileList}`);
+  }
+
+  if (dependencies.length > 0) {
+    const depSummary = dependencies.map((d) => {
+      const impBy = d.importedBy.length;
+      const impact = impBy > 5 ? " — **high impact**" : impBy > 2 ? " — _moderate impact_" : "";
+      return `- \`${d.filePath}\`: ${d.imports.length} imports, ${impBy} dependents${impact}`;
+    });
+    parts.push(`**Module dependencies:**\n${depSummary.join("\n")}`);
+  }
+
+  if (ownership.length > 0) {
+    const reviewers = new Map<string, number>();
+    for (const o of ownership) {
+      for (const a of o.topAuthors) {
+        reviewers.set(a.name, (reviewers.get(a.name) ?? 0) + a.commits);
+      }
+    }
+    const top = [...reviewers.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name]) => `**${name}**`);
+    if (top.length > 0) {
+      parts.push(`**Suggested reviewers:** ${top.join(", ")}`);
+    }
+  }
+
+  if (complexity.length > 0) {
+    const elevated = complexity.filter((c) => c.complexity !== "low");
+    if (elevated.length > 0) {
+      const items = elevated.map(
+        (c) =>
+          `- \`${c.filePath}\` — ${c.complexity}, ${c.lines} lines, ${c.functions} fn${c.longFunctions.length > 0 ? ` (long: ${c.longFunctions.join(", ")})` : ""}`,
+      );
+      parts.push(`**Complexity notes:**\n${items.join("\n")}`);
+    }
+  }
+
+  const hotspots = ctx.hotspots;
+  if (hotspots.length > 0) {
+    const relevantDirs = getRelevantDirs(ctx.relevantFiles);
+    const relevant = hotspots.filter((h) => relevantDirs.some((dir) => h.startsWith(dir)));
+    if (relevant.length > 0) {
+      const hotspotList = relevant
+        .slice(0, 3)
+        .map((h) => `- \`${h}\``)
+        .join("\n");
+      parts.push(`**High-churn files:**\n${hotspotList}`);
+    }
+  }
+
+  if (parts.length === 0) return "_No code analysis performed._";
+  return parts.join("\n\n");
+}
+
+function getRelevantDirs(files: SkillContext["relevantFiles"]): string[] {
+  const dirs = new Set<string>();
+  for (const f of files) {
+    const parts = f.filePath.split("/");
+    if (parts.length > 1) {
+      dirs.add(parts.slice(0, -1).join("/"));
+    }
+  }
+  return [...dirs];
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function formatDuration(ms: number): string {
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+}
+
+function buildFooter(ctx: SkillContext): string {
+  const base = `> Generated by AI Grooming Agent · [${ctx.issueIdentifier}](${ctx.issueUrl})`;
+
+  if (!ctx.stats) {
+    return `${base}\n> Review and adjust before merging.`;
+  }
+
+  const { usage, durationMs } = ctx.stats;
+  const cost = usage.estimatedCostUsd < 0.01 ? "<$0.01" : `~$${usage.estimatedCostUsd.toFixed(2)}`;
+
+  return `${base}
+> **Tokens:** ${formatTokens(usage.totalInputTokens)} in / ${formatTokens(usage.totalOutputTokens)} out (${formatTokens(usage.totalTokens)} total) · **Cost:** ${cost} · **Time:** ${formatDuration(durationMs)} · **LLM calls:** ${usage.llmCalls}
+> Review and adjust before merging.`;
+}

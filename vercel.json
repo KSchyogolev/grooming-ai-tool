@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/webhook/linear.ts": {
+      "maxDuration": 300
+    },
+    "api/webhook/github.ts": {
+      "maxDuration": 60
+    }
+  }
+}
